@@ -8,9 +8,9 @@ from memory_profiler import memory_usage
 
 
 # Configurações
-TEST_REPEATS = 1
+TEST_REPEATS = 3
 DATASET_PATH_CSV = "microdados_enem_2023/DADOS/MICRODADOS_ENEM_2023.csv"
-DATASET_PATH_PARQUET = "microdados_enem_2023/DADOS/MICRODADOS_ENEM_2023.parquet"
+DATASET_PATH_PARQUET = "microdados_enem_2023/DADOS/MICRODADOS_ENEM_2023_pequeno.parquet"
 ITENS_PATH_CSV = "microdados_enem_2023/DADOS/ITENS_PROVA_2023.csv"
 
 results = {
@@ -67,10 +67,14 @@ def duckdb_filter(path):
 
 def duckdb_join(path):
     duckdb.query(f"""
-        SELECT *
-        FROM read_csv_auto('{path}', delim=';', encoding='latin-1') AS dados
-        JOIN read_csv_auto('{ITENS_PATH_CSV}', delim=';', encoding='latin-1') AS itens
-        ON dados.CO_PROVA_MT = itens.CO_PROVA
+        SELECT 
+            *
+        FROM 
+            (SELECT * FROM read_csv_auto('{path}', sep=';', encoding='latin-1')) AS dados
+        JOIN 
+            (SELECT DISTINCT CO_PROVA, SG_AREA FROM read_csv_auto('{ITENS_PATH_CSV}', sep=';', encoding='latin-1')) AS itens
+        ON 
+            dados.CO_PROVA_MT = itens.CO_PROVA
     """)
 
 
@@ -85,7 +89,7 @@ def duckdb_agg(path):
 def duckdb_write_csv(path):
     duckdb.query(f"""
         COPY (SELECT * FROM read_csv_auto('{path}', delim=';', encoding='latin-1'))
-        TO 'output.csv' (FORMAT CSV, DELIMITER ';')
+        TO 'output.csv' (FORMAT CSV)
     """)
 
 
@@ -111,15 +115,15 @@ def pandas_filter(path):
 
 def pandas_join(path):
     dados = pd.read_csv(
-        path, sep=";", encoding="latin-1", usecols=["CO_PROVA_MT", "NU_INSCRICAO"]
+        path, sep=";", encoding="latin-1"
     )
     itens = pd.read_csv(
         ITENS_PATH_CSV,
         sep=";",
         encoding="latin-1",
-        usecols=["CO_PROVA", "CO_ITEM", "SG_AREA"],
-    )
-    return dados.merge(itens, left_on="CO_PROVA_MT", right_on="CO_PROVA")
+        usecols=["CO_PROVA", "SG_AREA"],
+    ).drop_duplicates()
+    dados.merge(itens, left_on="CO_PROVA_MT", right_on="CO_PROVA")
 
 
 def pandas_agg(path):
@@ -130,7 +134,7 @@ def pandas_agg(path):
 
 def pandas_write_csv(path):
     df = pd.read_csv(path, sep=";", encoding="latin-1")
-    df.to_csv("output.csv", sep=";", index=False)
+    df.to_csv("output.csv", index=False)
 
 
 def pandas_write_parquet(path):
@@ -155,14 +159,14 @@ def polars_filter(path):
 
 def polars_join(path):
     dados = pl.read_csv(
-        path, separator=";", encoding="latin-1", columns=["CO_PROVA_MT", "NU_INSCRICAO"]
+        path, separator=";", encoding="latin-1"
     )
     itens = pl.read_csv(
         ITENS_PATH_CSV,
         separator=";",
         encoding="latin-1",
-        columns=["CO_PROVA", "CO_ITEM", "SG_AREA"],
-    )
+        columns=["CO_PROVA", "SG_AREA"],
+    ).unique()
     return dados.join(itens, left_on="CO_PROVA_MT", right_on="CO_PROVA")
 
 
@@ -174,7 +178,7 @@ def polars_agg(path):
 
 def polars_write_csv(path):
     df = pl.read_csv(path, separator=";", encoding="latin-1")
-    df.write_csv("output.csv", separator=";")
+    df.write_csv("output.csv")
     return df
 
 
@@ -222,7 +226,11 @@ for engine, funcs in [
         ],
     ),
 ]:
+    print(f"Benchmarking {engine}...")
     for op_func, op_name in zip(funcs, ["read_csv", "read_parquet", "filter", "join", "agg", "write_csv", "write_parquet"]):
+        if engine == "pandas" and op_name == "write_csv":
+            continue
+        print(f"  Executando operação: {op_name}")
         benchmark(
             op_func,
             DATASET_PATH_CSV,
@@ -233,7 +241,7 @@ for engine, funcs in [
 
 # Exportar
 df_results = pd.DataFrame(results)
-df_results.to_csv("benchmark_resultados.csv", index=False)
+df_results.to_csv("benchmark_resultados_pequeno.csv", index=False)
 print(
     df_results.groupby(["engine", "operation"]).agg(
         {"time_seconds": "mean", "memory_mb": "mean"}
