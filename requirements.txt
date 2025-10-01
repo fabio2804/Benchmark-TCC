@@ -1,0 +1,16 @@
+# Core dependencies para benchmark
+duckdb>=1.3.0
+pandas>=2.3.0
+polars>=1.30.0
+psutil>=7.0.0
+
+# Dependencies para análise e visualização
+matplotlib>=3.7.0
+seaborn>=0.12.0
+numpy>=2.3.0
+
+# Dependencies opcionais para gráficos interativos
+plotly>=5.14.0
+
+# Desenvolvimento e qualidade de código
+ruff>=0.1.0
