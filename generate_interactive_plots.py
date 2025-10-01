@@ -48,90 +48,139 @@ class InteractiveBenchmarkVisualizer:
             print(f"❌ Erro ao carregar dados: {e}")
             raise
     
-    def create_interactive_dashboard(self):
-        """Cria um dashboard interativo completo"""
+    def create_individual_interactive_plots(self):
+        """Cria gráficos interativos individuais ao invés de dashboard único"""
         
-        # Criar subplots
-        fig = make_subplots(
-            rows=2, cols=2,
-            subplot_titles=('Tempo de Execução por Engine', 'Uso de Memória por Engine',
-                          'Escalabilidade - Tempo', 'Escalabilidade - Memória'),
-            specs=[[{"secondary_y": False}, {"secondary_y": False}],
-                   [{"secondary_y": False}, {"secondary_y": False}]]
-        )
-        
-        # Gráfico 1: Tempo por engine (boxplot)
-        for engine in self.df['engine'].unique():
-            engine_data = self.df[self.df['engine'] == engine]
-            fig.add_trace(
-                go.Box(y=engine_data['time_mean'], name=f'{engine.capitalize()} - Tempo',
-                      marker_color=self.cores_engines[engine],
-                      showlegend=True),
-                row=1, col=1
-            )
-        
-        # Gráfico 2: Memória por engine (boxplot)
-        for engine in self.df['engine'].unique():
-            engine_data = self.df[self.df['engine'] == engine]
-            fig.add_trace(
-                go.Box(y=engine_data['memory_mean'], name=f'{engine.capitalize()} - Memória',
-                      marker_color=self.cores_engines[engine],
-                      showlegend=False),
-                row=1, col=2
-            )
-        
-        # Gráfico 3: Escalabilidade tempo
+        # 1. Gráfico de tempo por engine - individual para cada cenário
         scenarios = ['pequeno', 'medio', 'grande']
-        for engine in self.df['engine'].unique():
-            engine_scenarios = []
-            engine_times = []
-            for scenario in scenarios:
-                data = self.df[(self.df['engine'] == engine) & (self.df['scenario'] == scenario)]
-                if not data.empty:
-                    engine_scenarios.append(scenario)
-                    engine_times.append(data['time_mean'].mean())
+        
+        for scenario in scenarios:
+            data = self.df[self.df['scenario'] == scenario]
             
-            fig.add_trace(
-                go.Scatter(x=engine_scenarios, y=engine_times, 
-                          name=f'{engine.capitalize()} - Tempo Escala',
-                          mode='lines+markers',
-                          line=dict(color=self.cores_engines[engine]),
-                          showlegend=False),
-                row=2, col=1
-            )
-        
-        # Gráfico 4: Escalabilidade memória
-        for engine in self.df['engine'].unique():
-            engine_scenarios = []
-            engine_memory = []
-            for scenario in scenarios:
-                data = self.df[(self.df['engine'] == engine) & (self.df['scenario'] == scenario)]
-                if not data.empty:
-                    engine_scenarios.append(scenario)
-                    engine_memory.append(data['memory_mean'].mean())
+            fig = go.Figure()
             
-            fig.add_trace(
-                go.Scatter(x=engine_scenarios, y=engine_memory,
-                          name=f'{engine.capitalize()} - Memória Escala',
-                          mode='lines+markers',
-                          line=dict(color=self.cores_engines[engine]),
-                          showlegend=False),
-                row=2, col=2
+            for engine in data['engine'].unique():
+                engine_data = data[data['engine'] == engine]
+                
+                fig.add_trace(go.Bar(
+                    x=engine_data['operation'],
+                    y=engine_data['time_mean'],
+                    name=engine.capitalize(),
+                    marker_color=self.cores_engines[engine],
+                    error_y=dict(type='data', array=engine_data['time_std'])
+                ))
+            
+            fig.update_layout(
+                title=f"Tempo de Execução - Cenário {scenario.capitalize()}",
+                xaxis_title="Operações ETL",
+                yaxis_title="Tempo (segundos)",
+                height=600,
+                showlegend=True,
+                barmode='group'
             )
+            
+            output_path = self.output_dir / f"tempo_por_engine_{scenario}.html"
+            pyo.plot(fig, filename=str(output_path), auto_open=False)
+            print(f"📊 Gráfico tempo {scenario} salvo: {output_path.name}")
         
-        # Atualizar layout
-        fig.update_layout(
-            title="Dashboard Interativo - Benchmark ETL Engines",
-            height=800,
-            showlegend=True
-        )
+        # 2. Gráfico de memória por engine - individual para cada cenário
+        for scenario in scenarios:
+            data = self.df[self.df['scenario'] == scenario]
+            
+            fig = go.Figure()
+            
+            for engine in data['engine'].unique():
+                engine_data = data[data['engine'] == engine]
+                
+                fig.add_trace(go.Bar(
+                    x=engine_data['operation'],
+                    y=engine_data['memory_mean'],
+                    name=engine.capitalize(),
+                    marker_color=self.cores_engines[engine],
+                    error_y=dict(type='data', array=engine_data['memory_std'])
+                ))
+            
+            fig.update_layout(
+                title=f"Uso de Memória - Cenário {scenario.capitalize()}",
+                xaxis_title="Operações ETL",
+                yaxis_title="Memória (MB)",
+                height=600,
+                showlegend=True,
+                barmode='group'
+            )
+            
+            output_path = self.output_dir / f"memoria_por_engine_{scenario}.html"
+            pyo.plot(fig, filename=str(output_path), auto_open=False)
+            print(f"📊 Gráfico memória {scenario} salvo: {output_path.name}")
         
-        # Salvar
-        output_path = self.output_dir / "dashboard_interativo.html"
-        pyo.plot(fig, filename=str(output_path), auto_open=False)
-        print(f"📊 Dashboard interativo salvo: {output_path}")
+        # 3. Gráficos de escalabilidade individuais por operação
+        operations = self.df['operation'].unique()
         
-        return fig
+        for operation in operations:
+            # Escalabilidade de tempo
+            fig_time = go.Figure()
+            data = self.df[self.df['operation'] == operation]
+            
+            scenario_order = ['pequeno', 'medio', 'grande']
+            
+            for engine in data['engine'].unique():
+                engine_data = data[data['engine'] == engine]
+                engine_data = engine_data.set_index('scenario').reindex(scenario_order)
+                
+                fig_time.add_trace(go.Scatter(
+                    x=scenario_order,
+                    y=engine_data['time_mean'],
+                    mode='lines+markers',
+                    name=engine.capitalize(),
+                    line=dict(color=self.cores_engines[engine], width=3),
+                    marker=dict(size=10),
+                    error_y=dict(type='data', array=engine_data['time_std'])
+                ))
+            
+            fig_time.update_layout(
+                title=f"Escalabilidade de Tempo - {operation.replace('_', ' ').title()}",
+                xaxis_title="Tamanho do Dataset",
+                yaxis_title="Tempo (segundos)",
+                yaxis_type="log",
+                height=600,
+                showlegend=True
+            )
+            
+            output_path = self.output_dir / f"escalabilidade_tempo_{operation}.html"
+            pyo.plot(fig_time, filename=str(output_path), auto_open=False)
+            print(f"📊 Escalabilidade tempo {operation} salva: {output_path.name}")
+            
+            # Escalabilidade de memória
+            fig_memory = go.Figure()
+            
+            for engine in data['engine'].unique():
+                engine_data = data[data['engine'] == engine]
+                engine_data = engine_data.set_index('scenario').reindex(scenario_order)
+                
+                fig_memory.add_trace(go.Scatter(
+                    x=scenario_order,
+                    y=engine_data['memory_mean'],
+                    mode='lines+markers',
+                    name=engine.capitalize(),
+                    line=dict(color=self.cores_engines[engine], width=3),
+                    marker=dict(size=10, symbol='square'),
+                    error_y=dict(type='data', array=engine_data['memory_std'])
+                ))
+            
+            fig_memory.update_layout(
+                title=f"Escalabilidade de Memória - {operation.replace('_', ' ').title()}",
+                xaxis_title="Tamanho do Dataset",
+                yaxis_title="Memória (MB)",
+                yaxis_type="log",
+                height=600,
+                showlegend=True
+            )
+            
+            output_path = self.output_dir / f"escalabilidade_memoria_{operation}.html"
+            pyo.plot(fig_memory, filename=str(output_path), auto_open=False)
+            print(f"📊 Escalabilidade memória {operation} salva: {output_path.name}")
+        
+        return True
     
     def create_3d_performance_plot(self):
         """Cria gráfico 3D de performance (Tempo vs Memória vs Cenário)"""
@@ -253,7 +302,7 @@ class InteractiveBenchmarkVisualizer:
         print("=" * 50)
         
         try:
-            self.create_interactive_dashboard()
+            self.create_individual_interactive_plots()
             self.create_3d_performance_plot()
             self.create_animated_performance()
             
